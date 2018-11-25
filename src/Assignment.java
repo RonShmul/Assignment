@@ -1,10 +1,9 @@
 import java.io.BufferedReader;
 import java.io.FileReader;
 import java.io.IOException;
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.PreparedStatement;
-import java.sql.SQLException;
+import java.sql.*;
+import java.util.ArrayList;
+import java.util.List;
 
 public class Assignment {
 
@@ -45,12 +44,10 @@ public class Assignment {
             }
         }catch (IOException e) {
             e.printStackTrace();
-        } catch (SQLException e) {
-            e.printStackTrace();
         }
     }
 
-    private void addToTable(String[] parts) throws SQLException {
+    private void addToTable(String[] parts){
         PreparedStatement ps = null;
         try{
             String title = parts[0];
@@ -67,15 +64,82 @@ public class Assignment {
         }finally{
         try{
             if(ps != null){ps.close();}
-        }catch (SQLException e3) {e3.printStackTrace();}
+        }catch (SQLException e) {e.printStackTrace();}
             try{
                 if(connection != null){connection.close();}
-            }catch (SQLException e3) {e3.printStackTrace();}
+            }catch (SQLException e) {e.printStackTrace();}
         }
     }
 
     public void calculateSimilarity(){
+        List<Integer> mids = readMidsFromTable();  // todo: needs to be long or possible with int?
+        double maxDist = maxDistFromSQL();
+        for (Integer i=0;i<mids.size();i++){
+            for (Integer j=i+1;j<mids.size();i++){
+                float similarity = simCalcFromSQL(i,j,maxDist);
+                PreparedStatement ps = null;
+                try{
+                    connect();
+                    String insert = "INSERT into Similarity VALUES(?,?,?)";
+                    ps = connection.prepareStatement(insert);
+                    ps.setLong(1,i);
+                    ps.setLong(2,j);
+                    ps.setDouble(3,similarity);
+                    ps.executeUpdate();
+                    connection.commit();
+                    ps.close();
+                }catch (SQLException e) {
+                e.printStackTrace();
+                }finally{
+                    try{
+                        if(ps != null){ps.close();}
+                    }catch (SQLException e) {e.printStackTrace();}
+                    try{
+                        if(connection != null){connection.close();}
+                    }catch (SQLException e) {e.printStackTrace();}
+                }
+            }
+        }
+    }
 
+    //function that takes the similarity for 2 mids from the SQL function
+    private float simCalcFromSQL(Integer mid1, Integer mid2, double maxDist) {
+    }
+
+    //function that takes the maximal distance from the SQL function
+    private int maxDistFromSQL() {
+        int ans=0;
+        connect();
+        CallableStatement cs = null;
+        try{
+            cs = connection.prepareCall("{? = call MaximalDistance()}");
+            
+        }
+    }
+
+    //function that takes the list of all mids from the SQL table
+    private List<Integer> readMidsFromTable() {
+        List<Integer> ans = new ArrayList<>();
+        connect();
+        PreparedStatement ps = null;
+        String Select = "SELECT MID FROM MediaItems";
+        try{
+            ResultSet rs=ps.executeQuery();
+            while(rs.next()){
+                ans.add(rs.getInt("MID"));
+            }
+            rs.close();
+        }catch (SQLException e) {
+            e.printStackTrace();
+        }finally{
+            try{
+                if(ps != null){ps.close();}
+            }catch (SQLException e) {e.printStackTrace();}
+            try{
+                if(connection != null){connection.close();}
+            }catch (SQLException e) {e.printStackTrace();}
+        }
+        return ans;
     }
 }
 
