@@ -23,16 +23,18 @@ public class Assignment {
         {
             Class.forName("oracle.jdbc.driver.OracleDriver");
             connection = DriverManager.getConnection(connection_str, username, password);
-            //connection.setAutoCommit(false); todo: maybe?
+            connection.setAutoCommit(false);
         }catch (Exception e) {
             e.printStackTrace();
         }
     }
+
+    //The function reads a file and inserts information to MediaItems table
     public void fileToDataBase(String path){
         try {
             BufferedReader reader = new BufferedReader(new FileReader(path));
             String line;
-            connect();  // todo: maybe only when null
+            if(connection== null){ connect();}
             while( (line=reader.readLine()) != null){
                 String [] parts = line.split(",");
                 addToTable(parts);
@@ -44,10 +46,11 @@ public class Assignment {
 
     private void addToTable(String[] parts){
         PreparedStatement ps = null;
+        connect();
         try{
             String title = parts[0];
             int year = Integer.parseInt(parts[1]);
-            String insert = "INSERT into MediaItem(TITLE,PROD_YEAR) VALUES(?,?)";
+            String insert = "INSERT into MediaItems(TITLE,PROD_YEAR) "+ "VALUES(?,?)";
             ps = connection.prepareStatement(insert);
             ps.setString(1,title);
             ps.setInt(2,year);
@@ -66,41 +69,35 @@ public class Assignment {
         }
     }
 
-    public void calculateSimilarity(){
-        List<Integer> mids = readMidsFromTable();  // todo: needs to be long or possible with int?
+    public void calculateSimilarity() throws SQLException{
+        List<Long> MID1 = readMidsFromTable();
+        List<Long> MID2 = new ArrayList<Long>(MID1);
         int maxDist = maxDistFromSQL();
-        for (Integer i=0;i<mids.size();i++){
-            for (Integer j=i+1;j<mids.size();i++){
-                float similarity = simCalcFromSQL(i,j,maxDist);
-                PreparedStatement ps = null;
-                try{
-                    connect();
-                    String insert = "INSERT into Similarity VALUES(?,?,?)";
-                    ps = connection.prepareStatement(insert);
+        connect();
+        for (Long i : MID1) {
+            for (Long j : MID2) {
+                if (i != j) {
+                    float similarity = simCalcFromSQL(i,j,maxDist);
+                    PreparedStatement ps = null;
+                    ps = connection.prepareStatement("INSERT into Similarity" +" VALUES(?,?,?)");
                     ps.setLong(1,i);
                     ps.setLong(2,j);
                     ps.setFloat(3,similarity);
                     ps.executeUpdate();
                     connection.commit();
                     ps.close();
-                }catch (SQLException e) {
-                e.printStackTrace();
-                }finally{
-                    try{
-                        if(ps != null){ps.close();}
-                    }catch (SQLException e) {e.printStackTrace();}
-                    try{
-                        if(connection != null){connection.close();}
-                    }catch (SQLException e) {e.printStackTrace();}
                 }
             }
         }
+        try{
+            if(connection != null){connection.close();}
+        }catch (SQLException e) {e.printStackTrace();}
+
     }
 
     //function that takes the similarity for 2 mids from the SQL function
-    private float simCalcFromSQL(Integer mid1, Integer mid2, int maxDist) {
+    private float simCalcFromSQL(Long mid1, Long mid2, int maxDist) {
         float similarity = 0;
-        connect();
         CallableStatement cstmt = null;
         String call = "{? = call SimCalculation(?,?,?)}";
         try{
@@ -118,48 +115,34 @@ public class Assignment {
             try{
                 if(cstmt != null){cstmt.close();}
             }catch (SQLException e) {e.printStackTrace();}
-            try{
-                if(connection != null){connection.close();}
-            }catch (SQLException e) {e.printStackTrace();}
         }
         return similarity;
     }
 
     //function that takes the maximal distance from the SQL function
-    private int maxDistFromSQL() {
+    private int maxDistFromSQL() throws SQLException {
         int max=0;
         connect();
         CallableStatement cstmt = null;
-        String call = "{? = call MaximalDistance()}";
-        try{
-            cstmt = connection.prepareCall(call);
-            cstmt.registerOutParameter(1, oracle.jdbc.OracleTypes.NUMBER); //todo: what?!?
-            cstmt.execute();
-            max=cstmt.getInt(1);
-            cstmt.close();
-        }catch (SQLException e) {
-            e.printStackTrace();
-        }finally{
-            try{
-                if(cstmt != null){cstmt.close();}
-            }catch (SQLException e) {e.printStackTrace();}
-            try{
-                if(connection != null){connection.close();}
-            }catch (SQLException e) {e.printStackTrace();}
-        }
+        cstmt = connection.prepareCall("{? = call MaximalDistance()}");
+        cstmt.registerOutParameter(1, oracle.jdbc.OracleTypes.NUMBER);
+        cstmt.execute();
+        max=cstmt.getInt(1);
+        cstmt.close();
         return max;
     }
 
     //function that takes the list of all mids from the SQL table
-    private List<Integer> readMidsFromTable() {
-        List<Integer> ans = new ArrayList<>();
+    private List<Long> readMidsFromTable() {
+        List<Long> ans = new ArrayList<>();
         connect();
         PreparedStatement ps = null;
         String Select = "SELECT MID FROM MediaItems";
         try{
+            ps = connection.prepareStatement(Select);
             ResultSet rs=ps.executeQuery();
             while(rs.next()){
-                ans.add(rs.getInt("MID"));
+                ans.add(rs.getLong("MID"));
             }
             rs.close();
         }catch (SQLException e) {
@@ -175,7 +158,6 @@ public class Assignment {
         return ans;
     }
 
-
     // function that prints titles for mids with similarity > 0.3
     public void printSimilarItems(long mid){
         List<String> similarities = new  ArrayList<>();
@@ -187,8 +169,10 @@ public class Assignment {
             ps.setLong(1, mid);
             ResultSet rs = ps.executeQuery();
             while(rs.next()){
-                if (rs.getFloat("SIM") >  0.3)
-                    similarities.add(rs.getString("TITLE"));
+                float sim = rs.getFloat("SIM");
+                if (sim >  0.3) {
+                    similarities.add(rs.getString("TITLE") + " - " + sim);
+                }
             }
             rs.close();
         }catch (SQLException e) {
