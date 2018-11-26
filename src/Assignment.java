@@ -28,11 +28,6 @@ public class Assignment {
             e.printStackTrace();
         }
     }
-
-    public void disconnect(){  //todo: ?
-
-    }
-
     public void fileToDataBase(String path){
         try {
             BufferedReader reader = new BufferedReader(new FileReader(path));
@@ -73,7 +68,7 @@ public class Assignment {
 
     public void calculateSimilarity(){
         List<Integer> mids = readMidsFromTable();  // todo: needs to be long or possible with int?
-        double maxDist = maxDistFromSQL();
+        int maxDist = maxDistFromSQL();
         for (Integer i=0;i<mids.size();i++){
             for (Integer j=i+1;j<mids.size();i++){
                 float similarity = simCalcFromSQL(i,j,maxDist);
@@ -84,7 +79,7 @@ public class Assignment {
                     ps = connection.prepareStatement(insert);
                     ps.setLong(1,i);
                     ps.setLong(2,j);
-                    ps.setDouble(3,similarity);
+                    ps.setFloat(3,similarity);
                     ps.executeUpdate();
                     connection.commit();
                     ps.close();
@@ -103,18 +98,56 @@ public class Assignment {
     }
 
     //function that takes the similarity for 2 mids from the SQL function
-    private float simCalcFromSQL(Integer mid1, Integer mid2, double maxDist) {
+    private float simCalcFromSQL(Integer mid1, Integer mid2, int maxDist) {
+        float similarity = 0;
+        connect();
+        CallableStatement cstmt = null;
+        String call = "{? = call SimCalculation(?,?,?)}";
+        try{
+            cstmt = connection.prepareCall(call);
+            cstmt.setLong(2, mid1);
+            cstmt.setLong(3, mid2);
+            cstmt.setInt(4, maxDist);
+            cstmt.registerOutParameter(1, oracle.jdbc.OracleTypes.FLOAT);
+            cstmt.execute();
+            similarity=cstmt.getFloat(1);
+            cstmt.close();
+        }catch (SQLException e) {
+            e.printStackTrace();
+        }finally{
+            try{
+                if(cstmt != null){cstmt.close();}
+            }catch (SQLException e) {e.printStackTrace();}
+            try{
+                if(connection != null){connection.close();}
+            }catch (SQLException e) {e.printStackTrace();}
+        }
+        return similarity;
     }
 
     //function that takes the maximal distance from the SQL function
     private int maxDistFromSQL() {
-        int ans=0;
+        int max=0;
         connect();
-        CallableStatement cs = null;
+        CallableStatement cstmt = null;
+        String call = "{? = call MaximalDistance()}";
         try{
-            cs = connection.prepareCall("{? = call MaximalDistance()}");
-            
+            cstmt = connection.prepareCall(call);
+            cstmt.registerOutParameter(1, oracle.jdbc.OracleTypes.NUMBER); //todo: what?!?
+            cstmt.execute();
+            max=cstmt.getInt(1);
+            cstmt.close();
+        }catch (SQLException e) {
+            e.printStackTrace();
+        }finally{
+            try{
+                if(cstmt != null){cstmt.close();}
+            }catch (SQLException e) {e.printStackTrace();}
+            try{
+                if(connection != null){connection.close();}
+            }catch (SQLException e) {e.printStackTrace();}
         }
+        return max;
     }
 
     //function that takes the list of all mids from the SQL table
@@ -141,6 +174,37 @@ public class Assignment {
         }
         return ans;
     }
+
+
+    // function that prints titles for mids with similarity > 0.3
+    public void printSimilarItems(long mid){
+        List<String> similarities = new  ArrayList<>();
+        connect();
+        PreparedStatement ps = null;
+        String select = "SELECT MediaItems.TITLE as TITLE,SIMILARITY.MID2,SIMILARITY.SIMILARITY as SIM FROM SIMILARITY INNER JOIN MediaItems ON SIMILARITY.MID2=MediaItems.MID WHERE MID1=? ORDER BY SIMILARITY DESC";
+        try{
+            ps = connection.prepareStatement(select);
+            ps.setLong(1, mid);
+            ResultSet rs = ps.executeQuery();
+            while(rs.next()){
+                if (rs.getFloat("SIM") >  0.3)
+                    similarities.add(rs.getString("TITLE"));
+            }
+            rs.close();
+        }catch (SQLException e) {
+            e.printStackTrace();
+        }finally{
+            try{
+                if(ps != null){ps.close();}
+            }catch (SQLException e) {e.printStackTrace();}
+            try{
+                if(connection != null){connection.close();}
+            }catch (SQLException e) {e.printStackTrace();}
+        }
+
+        for (String title : similarities)
+        {
+            System.out.println(title);
+        }
+    }
 }
-
-
